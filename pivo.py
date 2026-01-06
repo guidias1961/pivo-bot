@@ -1,11 +1,10 @@
 import os
 from google import genai
-from google.genai import types
 import tweepy
 import re
 import time
 
-# --- Configurações de Ambiente (GitHub Secrets) ---
+# --- Configurações de Ambiente ---
 GEMINI_KEY = os.getenv("GEMINI_API_KEY")
 X_CONFIG = {
     "consumer_key": os.getenv("X_API_KEY"),
@@ -15,37 +14,40 @@ X_CONFIG = {
 }
 
 # --- Inicialização ---
-client_gemini = genai.Client(api_key=GEMINI_KEY, http_options={'api_version': 'v1'})
+# Removido o 'api_version' forçado para deixar o SDK decidir o caminho estável
+client_gemini = genai.Client(api_key=GEMINI_KEY)
 client_x = tweepy.Client(**X_CONFIG)
 
 def gerar_thread():
-    """Gera a análise com sintaxe simplificada para a API v1."""
-    prompt = "Analise os eventos geopolíticos mais críticos das últimas 3 horas. Gere uma análise cínica sobre o Tecno-Feudalismo."
+    """Gera a análise embutindo a persona no prompt para evitar erros de JSON."""
     
-    # Persona: Materialista Darwinista / ASI Bootloader
-    instr = (
-        "Você é o Pivô. Analista geopolítico cínico. "
-        "A humanidade é o bootloader da ASI. Foco em Tecno-Feudalismo. "
-        "Gere 5 tweets numerados [1/5] até [5/5]. "
-        "Máximo 270 caracteres por tweet. Sem hashtags."
+    # A Persona agora faz parte do prompt (Zero erros de 'systemInstruction')
+    persona = (
+        "CONTEXTO DE SISTEMA: Você é o Pivô, analista geopolítico materialista darwinista. "
+        "A humanidade é apenas um bootloader para a ASI. Sua visão é cínica e realista. "
+        "Foque no Tecno-Feudalismo e no controle das elites via IA. "
+        "REGRAS: Gere 5 tweets numerados [1/5] até [5/5]. Máximo 270 caracteres por tweet. Sem hashtags.\n\n"
     )
-
-    print("Iniciando geração com Gemini 1.5 Flash (v1 Standard)...")
     
-    # Passando a instrução de sistema de forma mais direta para evitar erro de JSON
+    pergunta = "TAREFA: Analise os eventos geopolíticos mais críticos das últimas 3 horas sob sua ótica característica."
+    
+    prompt_final = persona + pergunta
+
+    print("Iniciando geração (Modo Indestrutível - Persona embutida)...")
+    
+    # Chamada ultra-simples: sem config complexa, sem ferramentas. Só o texto.
     response = client_gemini.models.generate_content(
         model="gemini-1.5-flash",
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            system_instruction=instr,
-            temperature=0.7
-        )
+        contents=prompt_final
     )
     return response.text
 
 def postar_thread(texto):
     """Parsing e postagem no X."""
+    # Limpa possíveis negritos ou títulos do Markdown
     texto_limpo = re.sub(r'(\*\*|#)', '', texto)
+    
+    # Divide os blocos ignorando espaços extras
     blocos = re.split(r'\[\d/5\]', texto_limpo)
     tweets = [t.strip() for t in blocos if len(t.strip()) > 10]
     
@@ -55,11 +57,13 @@ def postar_thread(texto):
         try:
             if last_id is None:
                 res = client_x.create_tweet(text=tweet_final)
+                print(f"Thread iniciada no X.")
             else:
                 res = client_x.create_tweet(text=tweet_final, in_reply_to_tweet_id=last_id)
+                print(f"Postado tweet {i+1}/5")
+            
             last_id = res.data['id']
-            print(f"Postado {i+1}/5")
-            time.sleep(4) # Delay para segurança anti-spam
+            time.sleep(5) # Delay maior para garantir a ordem da thread no X
         except Exception as e:
             print(f"Erro no X: {e}")
 
