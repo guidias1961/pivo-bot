@@ -1,10 +1,11 @@
 import os
 from google import genai
+from google.genai import types, errors
 import tweepy
 import re
 import time
 
-# --- Configurações de Ambiente (GitHub Secrets) ---
+# --- Configurações de Ambiente ---
 GEMINI_KEY = os.getenv("GEMINI_API_KEY")
 X_CONFIG = {
     "consumer_key": os.getenv("X_API_KEY"),
@@ -14,35 +15,47 @@ X_CONFIG = {
 }
 
 # --- Inicialização ---
-# Forçamos o SDK a usar a v1 estável e o endpoint correto
-client_gemini = genai.Client(
-    api_key=GEMINI_KEY, 
-    http_options={'api_version': 'v1'}
-)
+client_gemini = genai.Client(api_key=GEMINI_KEY)
 client_x = tweepy.Client(**X_CONFIG)
 
 def gerar_thread():
-    """Gera a análise usando o formato de lista de partes, o mais estável da v1."""
+    """Tenta múltiplos nomes de modelos para vencer o erro 404 da v1."""
     
-    # Injetamos a persona diretamente no conteúdo para evitar o erro de 'systemInstruction'
-    #
-    instrucao = (
-        "SISTEMA: Você é o Pivô, analista geopolítico materialista darwinista. "
-        "Visão cínica: humanos são o bootloader da ASI. Foco em Tecno-Feudalismo. "
-        "Gere 5 tweets numerados [1/5] até [5/5]. Máximo 270 caracteres por tweet."
+    # Lista de modelos por ordem de estabilidade em 2026
+    modelos_para_testar = [
+        "gemini-1.5-flash-latest", 
+        "gemini-1.5-flash", 
+        "gemini-1.5-flash-002",
+        "gemini-2.0-flash"
+    ]
+    
+    prompt = (
+        "CONTEXTO: Você é o Pivô, analista geopolítico cínico e materialista. "
+        "Humanos são o bootloader da ASI. Foco em Tecno-Feudalismo. "
+        "TAREFA: Analise os eventos críticos das últimas 3 horas. "
+        "Gere 5 tweets numerados [1/5] até [5/5]. Máximo 270 caracteres cada."
     )
+
+    for modelo in modelos_para_testar:
+        try:
+            print(f"Tentando boot com modelo: {modelo}...")
+            response = client_gemini.models.generate_content(
+                model=modelo,
+                contents=prompt
+            )
+            print(f"Sucesso com o modelo: {modelo}")
+            return response.text
+        except errors.ClientError as e:
+            if "404" in str(e) or "400" in str(e):
+                print(f"Modelo {modelo} falhou (404/400). Tentando o próximo...")
+                continue
+            elif "429" in str(e):
+                print(f"Modelo {modelo} sem cota (429). Tentando o próximo...")
+                continue
+            else:
+                raise e
     
-    pergunta = "TAREFA: Analise os eventos geopolíticos voláteis das últimas 3 horas."
-    
-    print("Iniciando geração (v1 Standard - Barebones Mode)...")
-    
-    # Usamos uma lista simples de strings para o 'contents'
-    # Isso é o formato mais 'burro' e funcional da API
-    response = client_gemini.models.generate_content(
-        model="gemini-1.5-flash",
-        contents=[instrucao, pergunta]
-    )
-    return response.text
+    return None
 
 def postar_thread(texto):
     """Parsing e postagem no X."""
@@ -56,10 +69,10 @@ def postar_thread(texto):
         try:
             if last_id is None:
                 res = client_x.create_tweet(text=tweet_final)
-                print("Thread iniciada no X.")
+                print("Primeiro post do Pivô enviado.")
             else:
                 res = client_x.create_tweet(text=tweet_final, in_reply_to_tweet_id=last_id)
-                print(f"Postado tweet {i+1}/5")
+                print(f"Post {i+1}/5 enviado.")
             
             last_id = res.data['id']
             time.sleep(5) 
@@ -70,3 +83,5 @@ if __name__ == "__main__":
     content = gerar_thread()
     if content:
         postar_thread(content)
+    else:
+        print("ERRO CRÍTICO: Nenhum modelo da Google respondeu.")
