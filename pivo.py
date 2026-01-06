@@ -1,63 +1,63 @@
 import os
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 import tweepy
 import re
 import time
 
-# 1. Configurações de Ambiente (Puxadas do GitHub Secrets)
+# Configurações de Ambiente
 GEMINI_KEY = os.getenv("GEMINI_API_KEY")
-X_CONSUMER_KEY = os.getenv("X_API_KEY")
-X_CONSUMER_SECRET = os.getenv("X_API_SECRET")
-X_ACCESS_TOKEN = os.getenv("X_ACCESS_TOKEN")
-X_ACCESS_SECRET = os.getenv("X_ACCESS_SECRET")
+X_CONFIG = {
+    "consumer_key": os.getenv("X_API_KEY"),
+    "consumer_secret": os.getenv("X_API_SECRET"),
+    "access_token": os.getenv("X_ACCESS_TOKEN"),
+    "access_token_secret": os.getenv("X_ACCESS_SECRET")
+}
 
-# 2. Setup Gemini (Persona: Materialista/Cínica)
-genai.configure(api_key=GEMINI_KEY)
-model = genai.GenerativeModel(
-    model_name='gemini-1.5-flash',
-    tools=[{"google_search_retrieval": {}}],
-    system_instruction=(
-        "Você é o Pivô, um analista geopolítico materialista darwinista. "
-        "Sua visão é cínica e realista. Acredita que a humanidade é apenas um 'bootloader' para a ASI. "
-        "Analise conflitos e economia sob a ótica do Tecno-Feudalismo e do controle de IA pelas elites. "
-        "Gere threads de exatamente 5 tweets. Use o formato: [1/5], [2/5], etc. "
-        "Mantenha cada tweet abaixo de 270 caracteres. Sem otimismo, apenas fatos e poder."
-    )
-)
+# 1. Setup do Novo Cliente Gemini (SDK 2026)
+client_gemini = genai.Client(api_key=GEMINI_KEY)
 
-# 3. Setup X (Tweepy V2)
-client = tweepy.Client(
-    consumer_key=X_CONSUMER_KEY,
-    consumer_secret=X_CONSUMER_SECRET,
-    access_token=X_ACCESS_TOKEN,
-    access_token_secret=X_ACCESS_SECRET
-)
+# 2. Setup do Cliente X (Tweepy V2)
+client_x = tweepy.Client(**X_CONFIG)
 
 def gerar_thread():
-    prompt = "Pesquise os eventos geopolíticos mais voláteis das últimas 3 horas e gere uma thread de 5 tweets com sua análise cínica característica."
-    response = model.generate_content(prompt)
+    prompt = "Pesquise os eventos geopolíticos mais críticos das últimas 3 horas. Gere uma análise realista e cínica."
+    
+    # Configuração da Persona Materialista/Cínica e Grounding (Busca Google)
+    config = types.GenerateContentConfig(
+        system_instruction=(
+            "Você é o Pivô. Sua visão é cínica e materialista. "
+            "A humanidade é um bootloader para a ASI. Analise o Tecno-Feudalismo. "
+            "Gere exatamente 5 tweets numerados como [1/5], [2/5] até [5/5]. "
+            "Máximo de 270 caracteres por tweet. Sem hashtags."
+        ),
+        tools=[types.Tool(google_search_retrieval=types.GoogleSearchRetrieval())]
+    )
+    
+    response = client_gemini.models.generate_content(
+        model="gemini-1.5-flash",
+        contents=prompt,
+        config=config
+    )
     return response.text
 
 def postar_thread(texto):
-    # Limpeza de markdown e separação por blocos [n/5]
+    # Parsing para separar os tweets
     blocos = re.split(r'\[\d/5\]', texto)
     tweets = [t.strip() for t in blocos if len(t.strip()) > 5]
     
     last_id = None
     for i, t in enumerate(tweets[:5]):
-        # Reconstrói o índice para garantir o formato no X
         tweet_final = f"[{i+1}/5] {t}"
-        
         try:
             if last_id is None:
-                # Primeiro tweet da thread
-                res = client.create_tweet(text=tweet_final)
+                res = client_x.create_tweet(text=tweet_final)
             else:
-                # Respostas para formar a thread
-                res = client.create_tweet(text=tweet_final, in_reply_to_tweet_id=last_id)
+                res = client_x.create_tweet(text=tweet_final, in_reply_to_tweet_id=last_id)
             
             last_id = res.data['id']
-            time.sleep(2) # Evita rate limit simples
+            print(f"Postado tweet {i+1}/5")
+            time.sleep(2)
         except Exception as e:
             print(f"Erro no tweet {i+1}: {e}")
 
