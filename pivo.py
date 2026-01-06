@@ -5,7 +5,7 @@ import tweepy
 import re
 import time
 
-# --- Configurações de Ambiente ---
+# --- Configurações de Ambiente (GitHub Secrets) ---
 GEMINI_KEY = os.getenv("GEMINI_API_KEY")
 X_CONFIG = {
     "consumer_key": os.getenv("X_API_KEY"),
@@ -14,37 +14,37 @@ X_CONFIG = {
     "access_token_secret": os.getenv("X_ACCESS_SECRET")
 }
 
-# --- Inicialização com Força Bruta na v1 ---
-# Forçamos a versão 'v1' para evitar o erro 404 da v1beta
-client_gemini = genai.Client(
-    api_key=GEMINI_KEY,
-    http_options={'api_version': 'v1'}
-)
+# --- Inicialização ---
+client_gemini = genai.Client(api_key=GEMINI_KEY, http_options={'api_version': 'v1'})
 client_x = tweepy.Client(**X_CONFIG)
 
 def gerar_thread():
-    """Gera a análise usando o 1.5-flash na API estável."""
-    prompt = "Analise os eventos geopolíticos mais críticos e voláteis das últimas 3 horas. Gere uma análise cínica sobre o Tecno-Feudalismo."
+    """Gera a análise com sintaxe simplificada para a API v1."""
+    prompt = "Analise os eventos geopolíticos mais críticos das últimas 3 horas. Gere uma análise cínica sobre o Tecno-Feudalismo."
     
-    config = types.GenerateContentConfig(
-        system_instruction=(
-            "Você é o Pivô, um analista geopolítico materialista darwinista. "
-            "A humanidade é apenas um bootloader para a ASI. "
-            "Gere exatamente 5 tweets numerados como [1/5] até [5/5]. "
-            "Mantenha cada tweet abaixo de 270 caracteres. Sem hashtags."
-        )
+    # Persona: Materialista Darwinista / ASI Bootloader
+    instr = (
+        "Você é o Pivô. Analista geopolítico cínico. "
+        "A humanidade é o bootloader da ASI. Foco em Tecno-Feudalismo. "
+        "Gere 5 tweets numerados [1/5] até [5/5]. "
+        "Máximo 270 caracteres por tweet. Sem hashtags."
     )
 
-    print("Iniciando geração com Gemini 1.5 Flash na API v1...")
+    print("Iniciando geração com Gemini 1.5 Flash (v1 Standard)...")
+    
+    # Passando a instrução de sistema de forma mais direta para evitar erro de JSON
     response = client_gemini.models.generate_content(
         model="gemini-1.5-flash",
         contents=prompt,
-        config=config
+        config=types.GenerateContentConfig(
+            system_instruction=instr,
+            temperature=0.7
+        )
     )
     return response.text
 
 def postar_thread(texto):
-    """Realiza o parsing e posta a thread no X."""
+    """Parsing e postagem no X."""
     texto_limpo = re.sub(r'(\*\*|#)', '', texto)
     blocos = re.split(r'\[\d/5\]', texto_limpo)
     tweets = [t.strip() for t in blocos if len(t.strip()) > 10]
@@ -59,7 +59,7 @@ def postar_thread(texto):
                 res = client_x.create_tweet(text=tweet_final, in_reply_to_tweet_id=last_id)
             last_id = res.data['id']
             print(f"Postado {i+1}/5")
-            time.sleep(3)
+            time.sleep(4) # Delay para segurança anti-spam
         except Exception as e:
             print(f"Erro no X: {e}")
 
